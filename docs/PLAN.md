@@ -75,11 +75,16 @@ z. That's deck.gl's `PathLayer` with 3D positions.
    fails *silently* — you get a plausible-looking but wrong mountain. Set
    `encoding: 'terrarium'` explicitly and validate against a known summit elevation
    in a test.
-2. **deck.gl layers vanish when terrain is enabled** unless the overlay is
-   `interleaved: true` (requires WebGL2 and maplibre-gl v3+). In non-interleaved
-   overlay mode deck draws into a separate canvas on top and the depth buffers never
-   meet, so terrain either fully occludes or never occludes your route. Interleaved
-   is the only mode that gives you a route line correctly disappearing behind a ridge.
+2. **deck.gl layers vanish when terrain is enabled.** The usual advice is to set
+   `interleaved: true` (requires WebGL2 and maplibre-gl v3+), so that deck renders
+   into MapLibre's own context and shares its depth buffer.
+
+   > **Corrected during implementation.** Interleaving does *not* fix this on
+   > maplibre-gl 5.24 + deck.gl 9.3: the layers are created and marked visible but
+   > never reach the screen, because MapLibre draws the terrain mesh in a pass a
+   > custom layer does not join. Overlay mode renders the route but has no depth
+   > occlusion. Neither mode currently delivers a line that disappears behind a
+   > ridge. Measurements and next steps: `docs/IMPLEMENTATION-NOTES.md` §3.
 3. **A true-altitude track will clip through a 30m DEM.** On a 45° face, ~30m of
    horizontal DEM error is ~30m of vertical error, so the GPS track sinks into the
    mesh and half your route is invisible. **Fix:** sample the DEM along the track at
