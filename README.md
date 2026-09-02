@@ -44,7 +44,7 @@ Uploading your own GPX at `/trips/new` works the same way.
 | --- | --- |
 | `npm run dev` | Dev server |
 | `npm run build` | Production build |
-| `npm test` | Unit tests (77) |
+| `npm test` | Unit tests (81) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npx tsx scripts/seed.ts` | Rebuild the demo peak, route and track |
 | `LIVE_TERRAIN=1 npm test` | Also run the network tests against real DEM tiles |
@@ -75,7 +75,18 @@ src/app/api/dem/   DEM tile proxy: edge-cacheable, keeps vendor keys server-side
 drizzle/           hand-authored PostGIS DDL
 docs/PLAN.md       the architecture plan this was built from
 docs/IMPLEMENTATION-NOTES.md   where building it proved the plan wrong
+docs/DEPLOYMENT.md Vercel settings and ordered next steps
 ```
+
+## Deploying
+
+Import the repo into Vercel and deploy — no environment variables required.
+You get a working read-only demo (the 3D viewer, terrain, the Mont Blanc
+route, edge-cached tiles), because the demo data ships in the bundle.
+
+**Uploads return `503` until a database is wired up**, because Vercel's
+filesystem is read-only. `docs/DEPLOYMENT.md` covers the settings that matter
+and the ordered next steps to make it writable.
 
 ## Known limitations
 
@@ -90,7 +101,9 @@ Read `docs/IMPLEMENTATION-NOTES.md` for the evidence behind each of these.
   deck.gl 9.3's interleaved mode.
 - **No database.** `Store` is implemented only by a JSON-file store for local
   development. `getStore()` throws if `DATABASE_URL` is set rather than
-  silently writing production data to an ephemeral serverless filesystem.
+  silently writing production data to an ephemeral serverless filesystem, and
+  both write paths raise `ReadOnlyStoreError` on a read-only host rather than
+  reporting a save that did not happen.
 - **No auth.** Every upload is attributed to one seeded demo user.
 - **Uploads capped at 4.5 MB**, the Vercel function body limit. The Blob
   client-upload handshake that lifts this is designed but not built.

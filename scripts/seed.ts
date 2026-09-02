@@ -216,14 +216,24 @@ async function main() {
     demSampled: result.demSampled,
   };
 
-  const store = new LocalStore();
-  await store.replaceAll({
+  const snapshot = {
     users: [user],
     peaks: [peak],
     routes: [route],
     trips: [trip],
     tracks: [track],
-  });
+  };
+
+  const store = new LocalStore();
+  await store.replaceAll(snapshot);
+
+  // Also write the committed snapshot the app falls back to when no writable
+  // data directory exists. This is what makes a fresh deploy show the demo
+  // instead of an empty shell: on Vercel the filesystem is read-only, so
+  // .data/ never exists there.
+  const snapshotPath = path.join(process.cwd(), "src", "lib", "store", "seed-data.json");
+  await writeFile(snapshotPath, JSON.stringify(snapshot, null, 2), "utf8");
+  console.log(`Wrote ${snapshotPath}`);
 
   console.log("\nSeeded:");
   console.log(`  peak      Mont Blanc (4808 m)`);

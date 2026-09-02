@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { ReadOnlyStoreError } from "./errors";
+
 /**
  * Raw upload storage.
  *
@@ -38,8 +40,14 @@ export async function putBlob(key: string, body: string | Buffer): Promise<strin
   }
 
   const name = safeKey(key);
-  await mkdir(BLOB_DIR, { recursive: true });
-  await writeFile(path.join(BLOB_DIR, name), body);
+  try {
+    await mkdir(BLOB_DIR, { recursive: true });
+    await writeFile(path.join(BLOB_DIR, name), body);
+  } catch (err) {
+    // Same rule as the metadata store: any persistence failure means the
+    // upload was not saved, whatever errno the host chose to report.
+    throw new ReadOnlyStoreError(err);
+  }
   return `local://${name}`;
 }
 

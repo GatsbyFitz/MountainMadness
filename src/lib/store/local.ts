@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { ReadOnlyStoreError } from "./errors";
+import seedData from "./seed-data.json";
 import type { Peak, Route, Store, Track, Trip, User, Visibility } from "./types";
 
 /**
@@ -23,6 +25,17 @@ interface Db {
 
 const EMPTY: Db = { users: [], peaks: [], routes: [], trips: [], tracks: [] };
 
+/**
+ * Committed demo data, statically imported so the bundler ships it.
+ *
+ * On a read-only host (Vercel) `.data/` never exists, and without this a fresh
+ * deploy would serve an empty app. Reads fall back to this snapshot; writes
+ * still fail, loudly, because there is nowhere durable to put them.
+ */
+const BUNDLED_SEED = seedData as unknown as Db;
+
+export { ReadOnlyStoreError };
+
 const DATA_DIR = process.env.LOCAL_DATA_DIR ?? path.join(process.cwd(), ".data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 
@@ -33,21 +46,40 @@ const DB_PATH = path.join(DATA_DIR, "db.json");
 let writeChain: Promise<unknown> = Promise.resolve();
 
 async function readDb(): Promise<Db> {
+  let raw: string;
   try {
-    const raw = await readFile(DB_PATH, "utf8");
-    return { ...EMPTY, ...(JSON.parse(raw) as Partial<Db>) };
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { ...EMPTY };
-    throw err;
+    raw = await readFile(DB_PATH, "utf8");
+  } catch {
+    // Any reason the local file is unreadable -- missing, read-only host,
+    // a non-directory in the path -- means the same thing: there is no local
+    // data. Serve the bundled demo rather than nothing. Not classified by
+    // errno, because a read-only mount reports several different codes
+    // depending on which part of the path fails.
+    return { ...EMPTY, ...BUNDLED_SEED };
   }
+
+  // Parsing is deliberately outside that catch. A file that exists but does
+  // not parse is corrupt local data, and silently replacing it with the demo
+  // would hide the loss instead of reporting it.
+  return { ...EMPTY, ...(JSON.parse(raw) as Partial<Db>) };
 }
 
 async function mutate<T>(fn: (db: Db) => T | Promise<T>): Promise<T> {
   const run = writeChain.then(async () => {
     const db = await readDb();
     const result = await fn(db);
-    await mkdir(DATA_DIR, { recursive: true });
-    await writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf8");
+    try {
+      await mkdir(DATA_DIR, { recursive: true });
+      await writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf8");
+    } catch (err) {
+      // Deliberately not classifying by errno. A read-only mount yields EROFS
+      // in some shapes and ENOENT in others (mkdir -p cannot create the parent
+      // chain), and getting that wrong means returning 200 for a write that
+      // went nowhere. By this point the result is already computed and the only
+      // thing that failed is persistence, so every failure means one thing to
+      // the caller: it was not saved.
+      throw new ReadOnlyStoreError(err);
+    }
     return result;
   });
   // Keep the chain alive even if this link rejects.

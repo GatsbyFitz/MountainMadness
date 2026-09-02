@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 
 import { ingestUpload } from "@/lib/ingest";
 import { VERCEL_BODY_LIMIT_BYTES, usingVercelBlob } from "@/lib/store/blob";
+import { ReadOnlyStoreError } from "@/lib/store/errors";
 import { DEMO_USER_ID } from "@/lib/demo";
 
-// DEM sampling per point is the slow step; a long alpine traverse needs more
-// than the default. Pro plans allow up to 300s.
-export const maxDuration = 300;
+// DEM sampling per point is the slow step. 60s is the Hobby ceiling and is
+// valid on every plan; Pro allows up to 800s, so raise this if long traverses
+// start timing out.
+export const maxDuration = 60;
 export const runtime = "nodejs";
 
 /**
@@ -60,6 +62,10 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ...summary, storage: usingVercelBlob() ? "blob" : "local" });
   } catch (err) {
+    // A read-only host is an operator problem, not a bad file: 503, not 422.
+    if (err instanceof ReadOnlyStoreError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
     // Parse and validation failures are the user's problem to fix, so say what
     // went wrong rather than returning a bare 500.
     return NextResponse.json(
