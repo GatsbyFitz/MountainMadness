@@ -48,6 +48,10 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           stats={track.stats}
           demSampled={track.demSampled}
           source={track.source}
+          title={trip.title}
+          peakName={peak?.name ?? null}
+          date={shortDate(trip.startedAt)}
+          outcome={trip.outcome}
         />
       ) : (
         <p className="rounded-lg border border-dashed border-slate-800 p-8 text-center text-slate-400">

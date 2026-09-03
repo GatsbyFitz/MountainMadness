@@ -28,6 +28,12 @@ export interface MountainViewerProps {
   basemap?: SkinId;
   className?: string;
   onReady?: () => void;
+  /**
+   * Receives a function that captures the live WebGL canvases, or null when
+   * the viewer unmounts. Capture must happen here rather than in a parent:
+   * the buffers are only readable immediately after a forced redraw.
+   */
+  onCaptureReady?: (capture: (() => HTMLCanvasElement[]) | null) => void;
 }
 
 const ROUTE_COLOR: [number, number, number, number] = [255, 122, 41, 255];
@@ -40,6 +46,7 @@ export default function MountainViewer({
   basemap = "relief",
   className,
   onReady,
+  onCaptureReady,
 }: MountainViewerProps) {
   const container = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -77,7 +84,15 @@ export default function MountainViewer({
       maxPitch: 85,
       // MSAA matters here: a thin route ribbon against a terrain mesh aliases
       // badly without it. Moved under canvasContextAttributes in MapLibre v5.
-      canvasContextAttributes: { antialias: true, powerPreference: "high-performance" },
+      canvasContextAttributes: {
+        antialias: true,
+        powerPreference: "high-performance",
+        // Required to read pixels back for the share card. Without it a
+        // canvas read after the frame is presented returns fully transparent
+        // -- the same readback trap that made the route look unrendered
+        // during development. Costs some memory bandwidth; worth it.
+        preserveDrawingBuffer: true,
+      },
       attributionControl: { compact: true },
     });
 
@@ -115,6 +130,22 @@ export default function MountainViewer({
         (window as unknown as { __mm_overlay?: unknown }).__mm_overlay = overlay;
       }
 
+      // Hand the parent a capture function. Both canvases must be redrawn
+      // synchronously first, then read in the same tick, or they come back
+      // blank.
+      onCaptureReady?.(() => {
+        map.triggerRepaint();
+        map.redraw();
+        const deckCanvas = (overlay as unknown as { _deck?: { canvas?: HTMLCanvasElement } })
+          ._deck?.canvas;
+        (overlay as unknown as { _deck?: { redraw?: (r: string) => void } })._deck?.redraw?.(
+          "share-capture",
+        );
+        return [map.getCanvas(), deckCanvas].filter(
+          (c): c is HTMLCanvasElement => Boolean(c),
+        );
+      });
+
       onReady?.();
     });
 
@@ -127,6 +158,7 @@ export default function MountainViewer({
     mapRef.current = map;
 
     return () => {
+      onCaptureReady?.(null);
       overlayRef.current?.finalize();
       overlayRef.current = null;
       setOverlayReady(false);

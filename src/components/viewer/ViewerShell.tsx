@@ -6,6 +6,7 @@ import { useCallback, useState } from "react";
 import type { BBox, ProfilePoint, TrackStats } from "@/lib/geo/types";
 import { RASTER_LAYERS, SKINS, type SkinId } from "@/lib/tiles/sources";
 import ElevationProfile from "./ElevationProfile";
+import ShareButton from "./ShareButton";
 
 /**
  * MapLibre and deck.gl both touch `window` at import time, so the viewer can
@@ -30,6 +31,11 @@ export interface ViewerShellProps {
   demSampled: boolean;
   /** "drawn" means the line is an approximation, not a recorded track. */
   source?: string;
+  /** Card metadata for the shareable image. */
+  title?: string;
+  peakName?: string | null;
+  date?: string | null;
+  outcome?: string | null;
 }
 
 function fmtDuration(seconds: number | null): string {
@@ -49,9 +55,16 @@ export default function ViewerShell({
   stats,
   demSampled,
   source,
+  title,
+  peakName,
+  date,
+  outcome,
 }: ViewerShellProps) {
   const [highlightIndex, setHighlightIndex] = useState<number | null>(null);
   const [basemap, setBasemap] = useState<SkinId>("relief");
+  // Held in state, not a ref: the share button must re-render enabled once the
+  // map hands over its capture function.
+  const [capture, setCapture] = useState<(() => HTMLCanvasElement[]) | null>(null);
 
   // The profile is resampled to even distance; the geometry is not. Map the
   // scrub fraction through distance so the marker lands where the cursor is.
@@ -76,7 +89,26 @@ export default function ViewerShell({
           highlightIndex={highlightIndex}
           basemap={basemap}
           className="h-full w-full"
+          // Wrapped: a bare function passed to a state setter would be called
+          // as an updater instead of stored.
+          onCaptureReady={(fn) => setCapture(() => fn)}
         />
+
+        {title && (
+          <div className="absolute right-3 top-3 z-10">
+            <ShareButton
+              capture={capture}
+              data={{
+                title,
+                peakName: peakName ?? null,
+                date: date ?? null,
+                outcome: outcome ?? null,
+                stats,
+                approximate: source === "drawn",
+              }}
+            />
+          </div>
+        )}
 
         <div className="pointer-events-auto absolute left-3 top-3 flex gap-1 rounded-md border border-slate-700 bg-slate-900/85 p-1 backdrop-blur">
           {SKINS.map((skin) => {
