@@ -3,6 +3,11 @@ import Link from "next/link";
 import { getStore } from "@/lib/store";
 import { metres } from "@/lib/format";
 
+// Reads user data, so it must not be baked in at build time: a
+// prerendered peak list would show whatever existed when the deploy ran and
+// never update. It also means the build no longer needs the database.
+export const dynamic = "force-dynamic";
+
 export default async function PeaksPage() {
   const store = getStore();
   const peaks = await store.listPeaks();

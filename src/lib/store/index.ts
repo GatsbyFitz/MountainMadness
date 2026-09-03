@@ -1,4 +1,5 @@
 import { LocalStore } from "./local";
+import { PostgresStore } from "./postgres";
 import type { Store } from "./types";
 
 export * from "./types";
@@ -8,23 +9,17 @@ let cached: Store | null = null;
 /**
  * Picks the storage backend.
  *
- * With DATABASE_URL set the Postgres/PostGIS implementation belongs here; it
- * is not written yet, so we say so rather than falling through to the local
- * store and silently writing a production upload to a JSON file on an
- * ephemeral serverless filesystem.
+ * DATABASE_URL selects Postgres/PostGIS; without it the local JSON store runs,
+ * which is what makes `npm run dev` work on a fresh clone. There is deliberately
+ * no silent fallback in the other direction: a configured database that cannot
+ * be reached is an error worth seeing, not a reason to start writing production
+ * uploads to a file on an ephemeral serverless disk.
  */
 export function getStore(): Store {
   if (cached) return cached;
-
-  if (process.env.DATABASE_URL) {
-    throw new Error(
-      "DATABASE_URL is set but the Postgres store is not implemented yet. " +
-        "Unset DATABASE_URL to run on the local JSON store, or implement " +
-        "PostgresStore against the Store interface in src/lib/store/types.ts.",
-    );
-  }
-
-  cached = new LocalStore();
+  cached = process.env.DATABASE_URL
+    ? new PostgresStore(process.env.DATABASE_URL)
+    : new LocalStore();
   return cached;
 }
 

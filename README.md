@@ -32,9 +32,14 @@ Uploading your own GPX at `/trips/new` works the same way.
   and a distance-even elevation profile.
 - **Terrain sampling** — the DEM is sampled along the track at ingest, so the
   drawn route can be lifted clear of a coarse mesh instead of sinking into it.
-- **3D viewer** — MapLibre terrain with a hypsometric + hillshade skin, a
-  screen-width route ribbon with a draped drop shadow, and a camera that frames
-  the route from its low end so you look *at* the face.
+- **3D viewer** — MapLibre terrain with four skins (DEM-generated relief,
+  satellite, topo, map), a screen-width route ribbon with a draped drop shadow,
+  and a camera that frames the route from its low end so you look *at* the face.
+  Imagery is proxied through `/api/raster` so it is edge-cached and carries no
+  vendor key in the client bundle.
+- **Waypoint snapping** — approximate coordinates are corrected against the DEM
+  (summits to the local maximum, huts to their published elevation) and dropped
+  entirely when they cannot be verified, rather than inventing terrain.
 - **Privacy trimming** — applied server-side at ingest, before geometry is
   stored, so a trimmed section never reaches any client.
 
@@ -44,9 +49,12 @@ Uploading your own GPX at `/trips/new` works the same way.
 | --- | --- |
 | `npm run dev` | Dev server |
 | `npm run build` | Production build |
-| `npm test` | Unit tests (81) |
+| `npm test` | Unit tests (89) |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npx tsx scripts/seed.ts` | Rebuild the demo peak, route and track |
+| `npm run seed` | Rebuild peaks/routes/trips from `scripts/climbs.ts` |
+| `npm run db:migrate` | Apply `drizzle/0000_init.sql` to Neon |
+| `npm run db:seed` | Load the seed snapshot into Neon |
+| `npm run db:status` | What is actually in the database |
 | `LIVE_TERRAIN=1 npm test` | Also run the network tests against real DEM tiles |
 
 ## Configuration
@@ -57,7 +65,7 @@ Everything is optional; defaults run locally with no setup. See `.env.example`.
 | --- | --- |
 | `NEXT_PUBLIC_TERRAIN_SOURCE` | `proxy` (default), `aws`, `maptiler`, `custom` |
 | `TERRAIN_UPSTREAM` | What `/api/dem` fetches from. Defaults to `aws`. |
-| `DATABASE_URL` | Reserved for the Postgres store (**not yet implemented** — see below) |
+| `DATABASE_URL` | Selects the Postgres/PostGIS store. Unset uses the local JSON store. |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob. Unset stores uploads under `.data/blob/` |
 
 Terrain sources live in one file, `src/lib/tiles/sources.ts`. Swapping vendors
@@ -99,11 +107,11 @@ Read `docs/IMPLEMENTATION-NOTES.md` for the evidence behind each of these.
   Phase 2's ship gate and it is not met.
 - **`maplibre-gl` is pinned to v5.** v6 breaks both its bundled worker and
   deck.gl 9.3's interleaved mode.
-- **No database.** `Store` is implemented only by a JSON-file store for local
-  development. `getStore()` throws if `DATABASE_URL` is set rather than
-  silently writing production data to an ephemeral serverless filesystem, and
-  both write paths raise `ReadOnlyStoreError` on a read-only host rather than
-  reporting a save that did not happen.
+- **Seeded routes are approximations.** The five climbs come from the Notion
+  diaries, but their geometry is drawn from named waypoints (trailheads, huts,
+  cols, summits), not recorded GPS. They are stored as `source: "drawn"` and
+  labelled as such in the viewer. Uploading the Strava GPX for a trip replaces
+  the approximation with the real track.
 - **No auth.** Every upload is attributed to one seeded demo user.
 - **Uploads capped at 4.5 MB**, the Vercel function body limit. The Blob
   client-upload handshake that lifts this is designed but not built.
