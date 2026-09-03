@@ -1,7 +1,7 @@
 import type { StyleSpecification } from "maplibre-gl";
 
 import type { TerrainSourceConfig } from "@/lib/geo/terrain";
-import { BASEMAP } from "@/lib/tiles/sources";
+import { RASTER_LAYERS, type SkinId } from "@/lib/tiles/sources";
 
 /**
  * Hypsometric ramp, valley green to summit snow.
@@ -35,8 +35,8 @@ function reliefRamp(): unknown[] {
 
 export interface StyleOptions {
   terrain: TerrainSourceConfig;
-  /** Swaps the hypsometric skin for satellite-ish OSM raster. */
-  basemap?: "relief" | "osm";
+  /** Which skin to drape: DEM-generated relief, or real imagery. */
+  basemap?: SkinId;
   exaggeration?: number;
 }
 
@@ -83,13 +83,15 @@ export function buildStyle({
     },
   };
 
-  if (basemap === "osm") {
+  if (basemap !== "relief") {
+    const layer = RASTER_LAYERS[basemap];
     style.sources.basemap = {
       type: "raster",
-      tiles: [...BASEMAP.osm.tiles],
+      // Through our own proxy: edge-cached, and no vendor key in the bundle.
+      tiles: [`/api/raster/${layer.id}/{z}/{x}/{y}`],
       tileSize: 256,
-      maxzoom: BASEMAP.osm.maxzoom,
-      attribution: BASEMAP.osm.attribution,
+      maxzoom: layer.maxzoom,
+      attribution: layer.attribution,
     };
     style.layers.push({
       id: "basemap",
@@ -116,7 +118,9 @@ export function buildStyle({
     type: "hillshade",
     source: "dem",
     paint: {
-      "hillshade-exaggeration": 0.55,
+      // Imagery already carries its own sun and shadow; shading it again reads
+      // as muddy. Relief has none, so it needs the full treatment.
+      "hillshade-exaggeration": basemap === "relief" ? 0.55 : 0.18,
       "hillshade-shadow-color": "#1c2b33",
       "hillshade-highlight-color": "#ffffff",
       "hillshade-accent-color": "#33414a",

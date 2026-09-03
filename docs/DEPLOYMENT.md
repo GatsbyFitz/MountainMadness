@@ -5,10 +5,16 @@
 Import the repo into Vercel and deploy. No environment variables are required.
 You will get a working, **read-only** demo:
 
-- The Mont Blanc trip page, with the 3D viewer, terrain, route ribbon,
-  auto-framed camera and the linked elevation profile.
-- The peak page and trip list.
-- `/api/dem` serving edge-cached terrain tiles.
+- Five trips from the Notion diaries — Gran Paradiso, Mont Blanc (Italian
+  route via Gonella), Single Cone, Mount Bogong, French Ridge — each with the
+  3D viewer, terrain, route ribbon, auto-framed camera and elevation profile.
+- Peak pages and the trip list.
+- `/api/dem` and `/api/raster` serving edge-cached terrain and imagery tiles.
+
+The imagery skins (Satellite, Topo, Map) could not be verified from the build
+sandbox, which blocks every tile host except the terrain bucket. The proxy,
+validation and caching are exercised; the upstreams are not. Check them on the
+first deploy.
 
 Demo data ships in the bundle (`src/lib/store/seed-data.json`), so a fresh
 deploy is not an empty shell.
@@ -62,33 +68,57 @@ egress) and point `NEXT_PUBLIC_TERRAIN_TILE_URL` at it with
 
 # Next steps, in order
 
-## 1. Make it writable — Neon Postgres (the only thing blocking real use)
+## 1. Point it at Neon — two commands
 
-Nothing else matters until uploads persist. Everything is staged for this:
-the schema, the DDL, and a `Store` interface with one method group per
-concern.
+`PostgresStore` is implemented (`src/lib/store/postgres.ts`) against Neon's
+HTTP driver, and `getStore()` selects it whenever `DATABASE_URL` is set. What
+remains is running the schema and loading the data:
 
-1. Create a Neon project. Use **Neon directly**, not the Vercel Postgres
-   surface — extension support is restricted there and PostGIS is required.
-2. Add the Neon integration to the Vercel project so preview deployments get
-   their own database branch.
-3. Run `drizzle/0000_init.sql`. It is hand-authored and includes
-   `CREATE EXTENSION postgis`; `drizzle-kit generate` cannot produce working
-   DDL for this schema (`IMPLEMENTATION-NOTES.md` §7).
-4. Implement `PostgresStore` against `src/lib/store/types.ts` and return it
-   from `getStore()` when `DATABASE_URL` is set. `getStore()` currently
-   throws in that case rather than silently writing production data to an
-   ephemeral filesystem, so this is the switch that turns it on.
-5. Set `BLOB_READ_WRITE_TOKEN` so raw uploads go to Vercel Blob instead of
-   the local directory. `putBlob` already branches on it.
+```bash
+# .env.local already carries DATABASE_URL / DATABASE_URL_UNPOOLED
+npm run db:migrate    # CREATE EXTENSION postgis + tables + indexes
+npm run db:seed       # loads src/lib/store/seed-data.json
+npm run db:status     # confirms what landed
+```
 
-Geometry conversion is the only fiddly part: `Track.line` is
-`[lon, lat, z][]` and the column is `geography(LineStringZ,4326)`. Write via
-`ST_GeomFromText('LINESTRING Z (...)', 4326)` and read via `ST_AsText`.
+Then set `DATABASE_URL` in the Vercel project's environment variables and
+redeploy. Add the Neon integration too, so preview deployments get their own
+database branch.
 
-**Estimate:** 1–2 days. **Unblocks:** everything.
+**These commands have not been run against your database.** The sandbox this
+was built in blocks `api.<region>.aws.neon.tech`, so the migration and seed
+are written and typechecked but unexecuted — run them locally and check
+`db:status` output before trusting the deploy.
 
-## 2. Add auth
+Two details worth knowing:
+
+- **HTTP driver, not a TCP pool.** Vercel Functions are short-lived, and a
+  pool per invocation is the classic way to exhaust a connection limit. It
+  also means the scripts work on networks that block port 5432.
+- **Geometry crosses as WKT.** `Track.line` is `[lon, lat, z][]`; the column
+  is `geography(LineStringZ,4326)`. The conversion lives in one file and is
+  unit-tested (axis order is the easy thing to get silently wrong).
+
+Also set `BLOB_READ_WRITE_TOKEN` so raw uploads go to Vercel Blob rather than
+the local directory — `putBlob` already branches on it.
+
+**Estimate:** under an hour, most of it waiting for a deploy.
+
+## 2. Replace the approximate route geometry with real tracks
+
+The five seeded climbs are drawn from named waypoints, not recorded GPS — the
+diaries link Strava activities that are not machine-readable from here. The
+seed verifies every waypoint against the DEM and **drops** any it cannot
+confirm, so several routes start higher than the real day did (Mount Bogong
+begins at Michell Hut; French Ridge at Aspiring Hut).
+
+The fix is mechanical: export the GPX from each Strava activity and upload it
+at `/trips/new`. That runs the real ingest pipeline and replaces the drawn
+approximation with the recorded track, `source: "gpx"`, and honest stats.
+
+**Estimate:** ten minutes per trip, once uploads persist (step 1).
+
+## 3. Add auth
 
 Every upload is currently attributed to one seeded demo user
 (`src/lib/demo.ts`). Auth.js v5 with Google/Apple OAuth plus email magic
@@ -97,7 +127,7 @@ link, per the plan. Replacing `DEMO_USER_ID` with the session lookup in
 
 **Estimate:** half a day, most of it OAuth app registration.
 
-## 3. Lift the 4.5 MB upload cap
+## 4. Lift the 4.5 MB upload cap
 
 The server-upload path is capped by Vercel's [4.5 MB function body limit][body],
 which a multi-day FIT file exceeds. The fix is designed but not built: use
@@ -111,7 +141,7 @@ Do this together with step 1 — the webhook needs somewhere to write.
 
 **Estimate:** half a day.
 
-## 4. Fix depth occlusion (Phase 2's unmet ship gate)
+## 5. Fix depth occlusion (Phase 2's unmet ship gate)
 
 Route sections behind a ridge currently draw on top of it. This is the one
 place the product visibly falls short of the plan, and it is worth fixing
@@ -128,7 +158,7 @@ part.
 **Estimate:** 1–3 days, genuinely uncertain — this is research, not
 plumbing.
 
-## 5. Then the plan's Phase 3 onward
+## 6. Then the plan's Phase 3 onward
 
 Peaks and routes registry (OSM import, route CRUD, peak matching in the
 confirm flow), then explore/social, then flyover. `docs/PLAN.md` §7 has the
@@ -138,10 +168,9 @@ sequencing and ship gates.
 
 ## Recommended order
 
-If the goal is *a thing climbers can actually use*: **1 → 2 → 3 → 4**. The
-first three are well-understood work that turns a demo into an app; the
-fourth is the quality bar that makes it worth showing.
+If the goal is *a thing climbers can actually use*: **1 → 2 → 3 → 4 → 5**.
+Step 1 is now an hour, not days, and step 2 turns five approximations into
+five real records.
 
-If the goal is *a compelling demo to show people*: **4 → 1**. The occlusion
-gap is what a mountaineer will notice in the first ten seconds; persistence
-is what they will notice in the first ten minutes.
+If the goal is *a compelling demo to show people*: **1 → 2 → 5**. Real tracks
+on real terrain sell it; the occlusion gap is what a mountaineer notices next.

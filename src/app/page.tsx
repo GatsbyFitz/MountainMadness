@@ -3,6 +3,11 @@ import Link from "next/link";
 import { getStore } from "@/lib/store";
 import { km, metres, shortDate } from "@/lib/format";
 
+// Reads user data, so it must not be baked in at build time: a
+// prerendered trip list would show whatever existed when the deploy ran and
+// never update. It also means the build no longer needs the database.
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
   const store = getStore();
   const trips = await store.listTrips();

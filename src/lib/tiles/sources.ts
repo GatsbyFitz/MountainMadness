@@ -97,23 +97,60 @@ export function getTerrainSource(id?: string): TerrainSourceConfig {
 }
 
 /**
- * Basemap raster used to skin the terrain.
+ * Raster skins draped over the terrain mesh.
  *
- * Hillshade over a hypsometric tint rather than satellite: it is free, needs no
- * key, works at every zoom, and a coloured route line reads far better against
- * neutral rock than against photographic texture.
+ * `relief` is generated from the DEM we already load, so it costs no extra
+ * tiles and needs no key — the sane default, and the one a coloured route line
+ * reads best against. The rest are real imagery for when you want to see the
+ * actual glacier, rock band or tree line, and all go through /api/raster so
+ * they are edge-cached and carry no vendor key in the client bundle.
  */
-export const BASEMAP = {
-  hillshade: {
-    id: "hillshade",
-    tiles: ["https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png"],
-    maxzoom: 14,
-    attribution: "Hillshading: Wikimedia Labs / SRTM",
+export interface RasterLayerConfig {
+  id: string;
+  label: string;
+  /** Upstream template. Note the ArcGIS {y}/{x} ordering — it is not a typo. */
+  url: string;
+  maxzoom: number;
+  attribution: string;
+  /** Shown in the viewer so the source of what you are looking at is legible. */
+  note?: string;
+}
+
+export type RasterLayerId = "satellite" | "topo" | "osm";
+
+export const RASTER_LAYERS: Record<RasterLayerId, RasterLayerConfig> = {
+  satellite: {
+    id: "satellite",
+    label: "Satellite",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    maxzoom: 19,
+    attribution:
+      'Imagery &copy; <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics',
+    note: "Highest detail. Best for seeing the actual glacier and rock.",
+  },
+  topo: {
+    id: "topo",
+    label: "Topo",
+    url: "https://tile.opentopomap.org/{z}/{x}/{y}.png",
+    maxzoom: 17,
+    attribution:
+      '&copy; <a href="https://opentopomap.org/">OpenTopoMap</a> (CC-BY-SA), ' +
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    note: "Contours, huts and trails — closest to a paper map.",
   },
   osm: {
     id: "osm",
-    tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+    label: "Map",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     maxzoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   },
-} as const;
+};
+
+/** Everything the viewer can drape, including the DEM-generated relief. */
+export const SKINS = ["relief", "satellite", "topo", "osm"] as const;
+export type SkinId = (typeof SKINS)[number];
+
+export function getRasterLayer(id: string): RasterLayerConfig | null {
+  return (RASTER_LAYERS as Record<string, RasterLayerConfig>)[id] ?? null;
+}

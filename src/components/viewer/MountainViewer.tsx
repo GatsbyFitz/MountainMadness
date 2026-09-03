@@ -13,7 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import type { BBox, ProfilePoint } from "@/lib/geo/types";
-import { getTerrainSource } from "@/lib/tiles/sources";
+import { getTerrainSource, type SkinId } from "@/lib/tiles/sources";
 import { frameTrack } from "./camera";
 import { buildStyle } from "./style";
 
@@ -25,7 +25,7 @@ export interface MountainViewerProps {
   profile?: ProfilePoint[];
   /** Index into `line` to highlight, driven by the elevation profile scrub. */
   highlightIndex?: number | null;
-  basemap?: "relief" | "osm";
+  basemap?: SkinId;
   className?: string;
   onReady?: () => void;
 }

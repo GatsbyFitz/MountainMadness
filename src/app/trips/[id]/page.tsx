@@ -47,6 +47,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           profile={track.profile}
           stats={track.stats}
           demSampled={track.demSampled}
+          source={track.source}
         />
       ) : (
         <p className="rounded-lg border border-dashed border-slate-800 p-8 text-center text-slate-400">
